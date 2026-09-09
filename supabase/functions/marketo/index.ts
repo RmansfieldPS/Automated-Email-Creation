@@ -59,6 +59,28 @@ function form(params: Record<string, string>): RequestInit {
 
 // ---- actions ----
 
+// Upload an image to Marketo Design Studio, return its public URL.
+// Folder 976 = "Email Builder Uploads" (/Design Studio/Default/Images and Files/…),
+// created 2026-09-09; override with the MKTO_IMAGE_FOLDER_ID secret if it moves.
+async function uploadImage(upload: File) {
+  if (!upload.type.startsWith("image/")) throw new Error("Only image files can be uploaded");
+  if (upload.size > 8 * 1024 * 1024) throw new Error("Image too large (max 8 MB)");
+  const folderId = Number(Deno.env.get("MKTO_IMAGE_FOLDER_ID") ?? 976);
+  // Keep the original name recognizable but unique (Marketo file names are global)
+  const base = (upload.name || "image.png").replace(/[^A-Za-z0-9._-]+/g, "-");
+  const stamp = new Date().toISOString().slice(2, 19).replace(/[-:]/g, "").replace("T", "-");
+  const dot = base.lastIndexOf(".");
+  const name = dot > 0 ? base.slice(0, dot) + "-" + stamp + base.slice(dot) : base + "-" + stamp;
+  const fd = new FormData();
+  fd.append("file", upload, name);
+  fd.append("name", name);
+  fd.append("folder", JSON.stringify({ id: folderId, type: "Folder" }));
+  const j = await mkto("/asset/v1/files.json", { method: "POST", body: fd });
+  const f = j.result?.[0];
+  if (!f?.url) throw new Error("Marketo upload returned no URL: " + JSON.stringify(j));
+  return { url: f.url, name: f.name, id: f.id };
+}
+
 async function getTokens(programId: number) {
   // NOTE: /program/{id}/tokens.json returns 610 on this instance — the folder
   // endpoint with folderType=Program is the one that works (verified 2026-07-31).
@@ -162,9 +184,25 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const body = await req.json();
+    // Image uploads arrive as multipart/form-data; everything else is JSON
+    let body: any;
+    let upload: File | null = null;
+    if ((req.headers.get("content-type") ?? "").includes("multipart/form-data")) {
+      const fd = await req.formData();
+      body = { action: fd.get("action") };
+      const f = fd.get("file");
+      if (f instanceof File) upload = f;
+    } else {
+      body = await req.json();
+    }
+
     let result: unknown;
     switch (body.action) {
+      case "uploadImage": {
+        if (!upload) throw new Error("No file received");
+        result = await uploadImage(upload);
+        break;
+      }
       case "ping": {
         await mktoToken();
         result = { ok: true, base: MKTO_BASE, user: user.email };

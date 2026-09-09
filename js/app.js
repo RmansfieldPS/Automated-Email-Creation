@@ -143,6 +143,16 @@ function renderTokenFields() {
       input = '<input type="date" id="tk-' + i + '" value="' + v + '">';
     } else if (tk.type === "number" || tk.type === "score") {
       input = '<input type="number" id="tk-' + i + '" value="' + v + '">';
+    } else if (/image\s*url/i.test(tk.name)) {
+      // Image tokens: type a URL or upload a file straight into Design Studio
+      var hasUrl = /^https?:\/\//i.test(tk.value || "");
+      input = '<div class="imgtok">' +
+        '<input type="text" id="tk-' + i + '" value="' + v + '" oninput="imgTokenPreview(' + i + ')">' +
+        '<button type="button" class="btn imgtok-btn" id="tkbtn-' + i + '" onclick="document.getElementById(\'tkfile-' + i + '\').click()">Upload image</button>' +
+        '<input type="file" id="tkfile-' + i + '" accept="image/*" class="hidden" onchange="uploadTokenImage(' + i + ')">' +
+        "</div>" +
+        '<div class="imgtok-preview" id="tkprev-' + i + '">' + (hasUrl ? '<img src="' + v + '" alt="">' : "") + "</div>" +
+        '<div class="hint">Upload sends the image to Marketo Design Studio (Email Builder Uploads) and fills in its URL automatically.</div>';
     } else {
       input = '<input type="text" id="tk-' + i + '" value="' + v + '">';
     }
@@ -264,6 +274,33 @@ function cleanHtml(html) {
   })(root);
   var out = root.innerHTML.replace(/<p>(\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, "").trim();
   return /^(\s|&nbsp;|<br\s*\/?>)*$/i.test(out) ? "" : out;
+}
+
+// ---------- image token upload ----------
+function imgTokenPreview(i) {
+  var v = $("tk-" + i).value.trim();
+  $("tkprev-" + i).innerHTML = /^https?:\/\//i.test(v) ? '<img src="' + esc(v) + '" alt="">' : "";
+}
+
+function uploadTokenImage(i) {
+  var fileEl = $("tkfile-" + i), btn = $("tkbtn-" + i);
+  var f = fileEl.files && fileEl.files[0];
+  if (!f) return;
+  if (!/^image\//.test(f.type)) { showToast("Please choose an image file"); fileEl.value = ""; return; }
+  if (f.size > 8 * 1024 * 1024) { showToast("Image too large (max 8 MB)"); fileEl.value = ""; return; }
+  btn.disabled = true;
+  btn.textContent = "Uploading…";
+  var fd = new FormData();
+  fd.append("action", "uploadImage");
+  fd.append("file", f, f.name);
+  callFn(fd)
+    .then(function (r) {
+      $("tk-" + i).value = r.url;
+      imgTokenPreview(i);
+      showToast("Image uploaded to Design Studio");
+    })
+    .catch(function (err) { showToast("Upload failed: " + err.message); })
+    .then(function () { btn.disabled = false; btn.textContent = "Upload image"; fileEl.value = ""; });
 }
 
 // ---------- create ----------

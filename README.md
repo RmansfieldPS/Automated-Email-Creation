@@ -61,8 +61,13 @@ Push to GitHub, add as a new Netlify site (no build command, publish dir = root)
 GitHub Pages is blocked by the corporate firewall — use Netlify, same as PMPM.
 
 ## Token types → form controls
-text → input · rich text → textarea · date → date picker · number/score → number.
-Fields are pre-filled with the template's current values; blank = keep template default.
+text → input · rich text → built-in rich text editor (toolbar + `</>` raw HTML
+view; visual output is sanitized to email-safe tags) · date → date picker ·
+number/score → number. Text tokens whose NAME contains "Image URL" also get an
+**Upload image** button: the file goes to Marketo Design Studio (folder 976
+"Email Builder Uploads" — override via `MKTO_IMAGE_FOLDER_ID` secret) and the
+returned public URL fills the field. Fields are pre-filled with the template's
+current values; blank = keep template default.
 
 ## Pilot scope
 In: clone + token fill + audit log. Out: email editing/preview, approvals,
