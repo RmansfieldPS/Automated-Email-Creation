@@ -106,7 +106,14 @@ function pickTemplate(id) {
   $("create-result").classList.add("hidden");
   $("token-fields").innerHTML = '<div class="empty">Fetching tokens from Marketo…</div>';
   callFn({ action: "tokens", programId: CUR_TPL.marketo_program_id })
-    .then(function (r) { CUR_TOKENS = r.tokens || []; renderTokenFields(); })
+    .then(function (r) {
+      // Only token types the API can write back. Programs may also carry
+      // 'script block' (Velocity personalization, e.g. first-name casing) —
+      // those run at send time and must not appear in the form.
+      var editable = ["text", "rich text", "date", "number", "score"];
+      CUR_TOKENS = (r.tokens || []).filter(function (t) { return editable.indexOf(t.type) !== -1; });
+      renderTokenFields();
+    })
     .catch(function (e) {
       $("token-fields").innerHTML = '<div class="empty">Could not load tokens: ' + esc(e.message) + "</div>";
     });
