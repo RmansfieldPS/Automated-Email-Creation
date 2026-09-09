@@ -132,11 +132,13 @@ function renderTokenFields() {
     el.innerHTML = '<div class="empty">This program has no My Tokens — nothing to customize. You can still clone it.</div>';
     return;
   }
+  // New lines in the rich text editors become <p>, matching Marketo markup
+  try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch (e) {}
   el.innerHTML = CUR_TOKENS.map(function (tk, i) {
     var input;
     var v = esc(tk.value);
     if (tk.type === "rich text") {
-      input = '<textarea id="tk-' + i + '">' + v + "</textarea>";
+      input = rteMarkup(i);
     } else if (tk.type === "date") {
       input = '<input type="date" id="tk-' + i + '" value="' + v + '">';
     } else if (tk.type === "number" || tk.type === "score") {
@@ -147,6 +149,121 @@ function renderTokenFields() {
     return '<div class="field"><label for="tk-' + i + '">' + esc(tk.name) +
       ' <span class="muted small">(' + esc(tk.type) + ')</span></label>' + input + "</div>";
   }).join("");
+  // Initialize the rich text editors: template value in, paste as plain text
+  CUR_TOKENS.forEach(function (tk, i) {
+    if (tk.type !== "rich text") return;
+    var ed = $("tk-" + i);
+    ed.innerHTML = cleanHtml(tk.value || "");
+    ed.addEventListener("paste", function (e) {
+      e.preventDefault();
+      var text = (e.clipboardData || window.clipboardData).getData("text/plain");
+      document.execCommand("insertText", false, text);
+    });
+  });
+}
+
+// ---------- rich text editor ----------
+// Zero-dependency contenteditable editor for 'rich text' tokens. Produces
+// email-safe HTML; the </> toggle exposes raw source for exact snippets
+// (e.g. the styled Hero Link anchor). All handlers global (inline onclick).
+
+function rteMarkup(i) {
+  function b(cmd, label, title) {
+    return '<button type="button" class="rte-btn" title="' + title +
+      '" onmousedown="event.preventDefault()" onclick="rteCmd(' + i + ",'" + cmd + "')\">" + label + "</button>";
+  }
+  return '<div class="rte">' +
+    '<div class="rte-toolbar">' +
+      b("bold", "<b>B</b>", "Bold") +
+      b("italic", "<i>I</i>", "Italic") +
+      b("insertUnorderedList", "&bull; List", "Bullet list") +
+      b("insertOrderedList", "1. List", "Numbered list") +
+      '<button type="button" class="rte-btn" title="Turn selected text into a link" onmousedown="event.preventDefault()" onclick="rteLink(' + i + ')">Link</button>' +
+      b("reg", "&reg;", "Insert superscript ®") +
+      b("clear", "Clear", "Remove formatting from selection") +
+      '<button type="button" class="rte-btn rte-src-btn" title="View / edit raw HTML" onclick="rteToggleSrc(' + i + ')">&lt;/&gt;</button>' +
+    "</div>" +
+    '<div class="rte-area" id="tk-' + i + '" contenteditable="true"></div>' +
+    '<textarea class="rte-srcarea hidden" id="tksrc-' + i + '" spellcheck="false"></textarea>' +
+    "</div>" +
+    '<div class="hint">Pastes as plain text. Use &lt;/&gt; to paste an exact HTML snippet. Leave empty to keep the template default.</div>';
+}
+
+function rteCmd(i, cmd) {
+  var ed = $("tk-" + i);
+  if (!ed || ed.classList.contains("hidden")) return; // source mode: type HTML directly
+  if (document.activeElement !== ed) ed.focus();
+  if (cmd === "reg") document.execCommand("insertHTML", false, "<sup>&reg;</sup>");
+  else if (cmd === "clear") { document.execCommand("removeFormat"); document.execCommand("unlink"); }
+  else document.execCommand(cmd, false, null);
+}
+
+function rteLink(i) {
+  var ed = $("tk-" + i);
+  if (!ed || ed.classList.contains("hidden")) return;
+  if (document.activeElement !== ed) ed.focus();
+  var sel = window.getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) { showToast("Select the text to turn into a link first"); return; }
+  var url = prompt("Link URL (https://…)");
+  if (url && url.trim()) document.execCommand("createLink", false, url.trim());
+}
+
+function rteToggleSrc(i) {
+  var ed = $("tk-" + i), src = $("tksrc-" + i);
+  if (src.classList.contains("hidden")) {
+    src.value = cleanHtml(ed.innerHTML);
+    ed.classList.add("hidden"); src.classList.remove("hidden");
+    src.style.height = Math.max(130, ed.offsetHeight) + "px";
+    src.focus();
+  } else {
+    ed.innerHTML = cleanHtml(src.value);
+    src.classList.add("hidden"); ed.classList.remove("hidden");
+  }
+}
+
+// Current value of a rich text field: raw from source mode (sent verbatim),
+// sanitized from the visual editor. '' = keep template default.
+function rteValue(i) {
+  var src = $("tksrc-" + i);
+  if (src && !src.classList.contains("hidden")) return src.value.trim();
+  var ed = $("tk-" + i);
+  return cleanHtml(ed ? ed.innerHTML : "");
+}
+
+// Keep only email-safe markup: allowed tags, style attr, href/target on links.
+// Normalizes contenteditable's <div> line breaks to <p>, drops empty paragraphs.
+function cleanHtml(html) {
+  if (!html) return "";
+  var ALLOWED = { P: 1, BR: 1, STRONG: 1, B: 1, EM: 1, I: 1, U: 1, A: 1, UL: 1, OL: 1, LI: 1, SUP: 1, SUB: 1, SPAN: 1 };
+  var root = document.createElement("div");
+  root.innerHTML = html;
+  (function walk(node) {
+    Array.prototype.slice.call(node.childNodes).forEach(function (child) {
+      if (child.nodeType === 8) { node.removeChild(child); return; } // comments
+      if (child.nodeType !== 1) return;
+      var tag = child.tagName;
+      if (tag === "SCRIPT" || tag === "STYLE") { node.removeChild(child); return; }
+      walk(child);
+      if (tag === "DIV") {
+        var p = document.createElement("p");
+        while (child.firstChild) p.appendChild(child.firstChild);
+        node.replaceChild(p, child);
+        child = p; tag = "P";
+      }
+      if (!ALLOWED[tag]) { // unwrap unknown tags, keep their content
+        while (child.firstChild) node.insertBefore(child.firstChild, child);
+        node.removeChild(child);
+        return;
+      }
+      Array.prototype.slice.call(child.attributes).forEach(function (a) {
+        var keep = a.name === "style" ||
+          (tag === "A" && (a.name === "href" || a.name === "target") && !/^\s*javascript:/i.test(a.value));
+        if (!keep) child.removeAttribute(a.name);
+      });
+    });
+  })(root);
+  var out = root.innerHTML.replace(/<p>(\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, "").trim();
+  return /^(\s|&nbsp;|<br\s*\/?>)*$/i.test(out) ? "" : out;
 }
 
 // ---------- create ----------
@@ -157,6 +274,7 @@ function doCreate(e) {
   if (!name) return;
 
   var tokens = CUR_TOKENS.map(function (tk, i) {
+    if (tk.type === "rich text") return { name: tk.name, type: tk.type, value: rteValue(i) };
     var el = $("tk-" + i);
     return { name: tk.name, type: tk.type, value: el ? el.value : tk.value };
   });
