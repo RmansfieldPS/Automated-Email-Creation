@@ -56,6 +56,31 @@ Browser (Netlify static)  →  Edge Function 'marketo' (JWT-gated, holds secrets
 > **Never put the client secret in this repo or in any js/ file.** It lives
 > only in the Edge Function secrets.
 
+## Login model (open signup, domain-gated)
+
+Anyone with an `@partssource.com` email self-registers in the app — no admin
+step. The domain is the access boundary and is enforced in three places:
+
+1. App signup form (friendly early error).
+2. **Edge Function** — rejects any non-`@partssource.com` caller before it
+   touches Marketo. This is the real gate; Supabase itself accepts any domain.
+3. **RLS** — `eb_templates` / `eb_runs` reads restricted to the same domain
+   (`db/upgrade-open-signup.sql`).
+
+Required Supabase settings (Authentication → Sign In / Providers):
+- **Allow new users to sign up: ON**
+- **Confirm email: OFF** — the built-in Supabase mailer is a dev-only service
+  (~2 emails/hour, poor corporate deliverability) and Outlook Safe Links tends
+  to mangle the links. With confirmation off, signup signs the user straight
+  in. Verify the live state any time:
+  `curl -H "apikey: <anon key>" https://<ref>.supabase.co/auth/v1/settings`
+  → want `"mailer_autoconfirm": true`, `"disable_signup": false`.
+
+Gotcha: Supabase masks a signup with an already-registered email as a *success*
+with `user.identities == []` (anti-enumeration). The app detects that and tells
+the user to sign in instead of waiting for an email. There is no password-reset
+flow yet — a forgotten password needs an admin reset in the dashboard.
+
 ### 4. Hosting
 Push to GitHub, add as a new Netlify site (no build command, publish dir = root).
 GitHub Pages is blocked by the corporate firewall — use Netlify, same as PMPM.
