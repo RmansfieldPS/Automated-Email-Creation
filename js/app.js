@@ -53,6 +53,12 @@ function renderAuth() {
 
 var SIGNUP = false; // login card mode: sign in vs create account
 
+function loginMsg(text, ok) {
+  var el = $("login-err");
+  el.textContent = text || "";
+  el.classList.toggle("ok", !!ok);
+}
+
 function toggleSignup(e) {
   e.preventDefault();
   SIGNUP = !SIGNUP;
@@ -61,19 +67,21 @@ function toggleSignup(e) {
   $("login-btn").textContent = SIGNUP ? "Create account" : "Sign in";
   $("login-q").textContent = SIGNUP ? "Already have an account?" : "First time here?";
   $("login-toggle").textContent = SIGNUP ? "Sign in" : "Create an account";
-  $("login-err").textContent = "";
+  loginMsg("");
 }
 
 function doLogin(e) {
   e.preventDefault();
-  var err = $("login-err");
-  err.textContent = "";
+  loginMsg("");
   var email = $("login-email").value.trim();
   var pass = $("login-pass").value;
+  var btn = $("login-btn");
 
   if (!SIGNUP) {
+    btn.disabled = true;
     sb.auth.signInWithPassword({ email: email, password: pass }).then(function (res) {
-      if (res.error) err.textContent = res.error.message;
+      btn.disabled = false;
+      if (res.error) loginMsg(res.error.message);
     });
     return;
   }
@@ -81,13 +89,24 @@ function doLogin(e) {
   // Self-signup: open to anyone with a PartsSource email. The same domain
   // rule is enforced server-side (Edge Function + RLS) — this check is just
   // the friendly early error.
-  if (!/@partssource\.com$/i.test(email)) { err.textContent = "Use your @partssource.com email."; return; }
-  if (pass.length < 8) { err.textContent = "Password must be at least 8 characters."; return; }
-  if (pass !== $("login-pass2").value) { err.textContent = "Passwords don't match."; return; }
+  if (!/@partssource\.com$/i.test(email)) { loginMsg("Use your @partssource.com email."); return; }
+  if (pass.length < 8) { loginMsg("Password must be at least 8 characters."); return; }
+  if (pass !== $("login-pass2").value) { loginMsg("Passwords don't match."); return; }
+
+  btn.disabled = true;
   sb.auth.signUp({ email: email, password: pass }).then(function (res) {
-    if (res.error) { err.textContent = res.error.message; return; }
-    if (res.data && res.data.session) return; // confirmations off: signed in immediately
-    err.textContent = "Account created — check your email to confirm, then sign in.";
+    btn.disabled = false;
+    if (res.error) { loginMsg(res.error.message); return; }
+    var d = res.data || {};
+    if (d.session) return; // email confirmation off: signed in already, onAuthStateChange takes over
+    // Supabase masks "email already registered" as a success whose user has no
+    // identities. Say so, instead of sending them to wait for an email that
+    // will never arrive.
+    if (d.user && Array.isArray(d.user.identities) && d.user.identities.length === 0) {
+      loginMsg("That email already has an account — switch to Sign in.");
+      return;
+    }
+    loginMsg("Account created. Check your email to confirm, then sign in.", true);
   });
 }
 

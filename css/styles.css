@@ -55,6 +55,7 @@ h3 { font-size: 15px; margin-top: 22px; text-transform: uppercase; letter-spacin
   border: 1px solid var(--line); border-radius: 8px; font-size: 14px;
 }
 .login-err { color: var(--err); font-size: 13px; min-height: 18px; margin-top: 8px; }
+.login-err.ok { color: var(--ok); }
 .login-note { color: var(--muted); font-size: 12px; margin-top: 16px; }
 
 /* ---- shell ---- */
