@@ -178,6 +178,11 @@ Deno.serve(async (req) => {
     );
     const { data: { user }, error: userErr } = await anon.auth.getUser();
     if (userErr || !user) throw new Error("Not signed in");
+    // Signup is open, so the real gate is the email domain: only PartsSource
+    // accounts may reach Marketo. Keep in sync with db/upgrade-open-signup.sql.
+    if (!(user.email ?? "").toLowerCase().endsWith("@partssource.com")) {
+      throw new Error("Access is limited to @partssource.com accounts");
+    }
 
     const svc = createClient(
       Deno.env.get("SUPABASE_URL")!,

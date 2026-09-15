@@ -51,14 +51,43 @@ function renderAuth() {
   }
 }
 
+var SIGNUP = false; // login card mode: sign in vs create account
+
+function toggleSignup(e) {
+  e.preventDefault();
+  SIGNUP = !SIGNUP;
+  $("login-pass2").classList.toggle("hidden", !SIGNUP);
+  $("login-pass").autocomplete = SIGNUP ? "new-password" : "current-password";
+  $("login-btn").textContent = SIGNUP ? "Create account" : "Sign in";
+  $("login-q").textContent = SIGNUP ? "Already have an account?" : "First time here?";
+  $("login-toggle").textContent = SIGNUP ? "Sign in" : "Create an account";
+  $("login-err").textContent = "";
+}
+
 function doLogin(e) {
   e.preventDefault();
-  $("login-err").textContent = "";
-  sb.auth.signInWithPassword({
-    email: $("login-email").value.trim(),
-    password: $("login-pass").value,
-  }).then(function (res) {
-    if (res.error) $("login-err").textContent = res.error.message;
+  var err = $("login-err");
+  err.textContent = "";
+  var email = $("login-email").value.trim();
+  var pass = $("login-pass").value;
+
+  if (!SIGNUP) {
+    sb.auth.signInWithPassword({ email: email, password: pass }).then(function (res) {
+      if (res.error) err.textContent = res.error.message;
+    });
+    return;
+  }
+
+  // Self-signup: open to anyone with a PartsSource email. The same domain
+  // rule is enforced server-side (Edge Function + RLS) — this check is just
+  // the friendly early error.
+  if (!/@partssource\.com$/i.test(email)) { err.textContent = "Use your @partssource.com email."; return; }
+  if (pass.length < 8) { err.textContent = "Password must be at least 8 characters."; return; }
+  if (pass !== $("login-pass2").value) { err.textContent = "Passwords don't match."; return; }
+  sb.auth.signUp({ email: email, password: pass }).then(function (res) {
+    if (res.error) { err.textContent = res.error.message; return; }
+    if (res.data && res.data.session) return; // confirmations off: signed in immediately
+    err.textContent = "Account created — check your email to confirm, then sign in.";
   });
 }
 

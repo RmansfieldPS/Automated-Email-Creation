@@ -15,12 +15,13 @@
     <h1>Email Builder</h1>
     <p class="login-sub">Clone a Marketo program, fill in the blanks, done.</p>
     <form id="login-form" onsubmit="doLogin(event)">
-      <input id="login-email" type="email" placeholder="Email" autocomplete="username" required>
+      <input id="login-email" type="email" placeholder="you@partssource.com" autocomplete="username" required>
       <input id="login-pass" type="password" placeholder="Password" autocomplete="current-password" required>
-      <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+      <input id="login-pass2" type="password" placeholder="Confirm password" autocomplete="new-password" class="hidden">
+      <button id="login-btn" type="submit" class="btn btn-primary btn-block">Sign in</button>
       <div id="login-err" class="login-err"></div>
     </form>
-    <p class="login-note">No account? Ask Ryan.</p>
+    <p class="login-note"><span id="login-q">First time here?</span> <a href="#" onclick="toggleSignup(event)" id="login-toggle">Create an account</a></p>
   </div>
 </div>
 
