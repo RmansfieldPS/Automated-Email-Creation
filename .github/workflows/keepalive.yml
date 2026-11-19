@@ -1,0 +1,54 @@
+# Keeps the Supabase project awake.
+#
+# Supabase free-tier projects pause after about a week with no API traffic, and
+# a paused project stops resolving in DNS entirely — the app just dies. This
+# app is used in bursts (a few sends a month), so it idles past that easily.
+# That is exactly what happened in November 2026.
+#
+# This pings the REST API every 3 days, which counts as activity. The run fails
+# loudly on a bad response so GitHub emails you instead of failing silently.
+#
+# Credentials come from js/config.js so there is one source of truth — point
+# the app at a different Supabase project and this follows automatically.
+# (The anon key is a public client key; it is committed on purpose.)
+#
+# NOTE: GitHub disables scheduled workflows in a repo with no activity for 60
+# days and emails you to re-enable. If this repo goes quiet that long, re-enable
+# it under the Actions tab.
+
+name: Keep Supabase awake
+
+on:
+  schedule:
+    - cron: "0 14 */3 * *"   # every 3 days, 14:00 UTC (~9am ET)
+  workflow_dispatch:          # and on demand from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ping Supabase REST API
+        run: |
+          set -euo pipefail
+          URL=$(grep -oE 'https://[a-z0-9]+\.supabase\.co' js/config.js | head -1)
+          KEY=$(grep -oE 'eyJ[A-Za-z0-9._-]+' js/config.js | head -1)
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "Could not read SUPABASE_URL / anon key from js/config.js"
+            exit 1
+          fi
+          echo "Pinging $URL"
+          CODE=$(curl -s -o /tmp/body -w '%{http_code}' -m 30 \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+            "$URL/rest/v1/eb_templates?select=id&limit=1" || echo 000)
+          echo "HTTP $CODE"
+          cat /tmp/body || true
+          if [ "$CODE" != "200" ]; then
+            echo ""
+            echo "Supabase did not respond normally."
+            echo "HTTP 000 usually means the project is PAUSED or deleted —"
+            echo "open the Supabase dashboard and restore it."
+            exit 1
+          fi
+          echo "Project is awake."

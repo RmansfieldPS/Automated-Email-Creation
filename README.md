@@ -85,6 +85,37 @@ flow yet — a forgotten password needs an admin reset in the dashboard.
 Push to GitHub, add as a new Netlify site (no build command, publish dir = root).
 GitHub Pages is blocked by the corporate firewall — use Netlify, same as PMPM.
 
+## Troubleshooting: the app suddenly stopped working
+
+**Symptom:** the site loads but login and everything else fails; `curl` to the
+Supabase URL returns HTTP 000 and DNS says "name does not exist".
+
+**Cause:** the Supabase free-tier project **paused for inactivity** (~1 week
+with no API traffic). A paused project stops resolving in DNS entirely. This
+happened in November 2026 after ~2 months idle.
+
+**Fix:** Supabase dashboard → the project → **Restore / Resume**. Data, users,
+Edge Function and secrets all survive a pause. DNS takes a few minutes to come
+back. Then re-verify:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -H "apikey: <anon key>" \
+  "https://<ref>.supabase.co/rest/v1/eb_templates?select=id&limit=1"   # want 200
+```
+
+**Prevention:** `.github/workflows/keepalive.yml` pings the REST API every 3
+days (that counts as activity) and fails loudly if the project is down. It
+reads the URL and key from `js/config.js`, so it follows a project change
+automatically. GitHub disables scheduled workflows in repos idle for 60 days —
+re-enable under the Actions tab if that happens. The permanent fix is Supabase
+Pro ($25/mo), which never pauses.
+
+**If the project was deleted rather than paused:** create a new Supabase
+project, run `db/setup-all.sql` (one idempotent script: tables, RLS, both
+templates), then redo the four non-SQL pieces — `js/config.js` URL + anon key,
+the `marketo` Edge Function, its secrets, and auth settings (signups ON,
+confirm email OFF).
+
 ## Token types → form controls
 text → input · rich text → built-in rich text editor (toolbar + `</>` raw HTML
 view; visual output is sanitized to email-safe tags) · date → date picker ·
